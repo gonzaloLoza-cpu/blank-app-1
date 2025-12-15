@@ -6,26 +6,24 @@ import seaborn as sns
 import tensorflow as tf
 import keras
 
-
 from sklearn import datasets
-from sklearn.model_selection import train_test_split, cross_validate
+from sklearn.model_selection import train_test_split, cross_validate, StratifiedKFold
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
-from sklearn.compose import make_column_transformer
+from sklearn.compose import make_column_transformer, ColumnTransformer
 from sklearn.impute import SimpleImputer, KNNImputer
 from sklearn.feature_selection import RFE
-from sklearn.metrics import make_scorer, classification_report, accuracy_score, ConfusionMatrixDisplay
+from sklearn.metrics import (
+    make_scorer, classification_report, accuracy_score, 
+    ConfusionMatrixDisplay, confusion_matrix, roc_auc_score, 
+    f1_score, precision_score, recall_score, roc_curve, auc
+)
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
-from sklearn.model_selection import StratifiedKFold, cross_validate
-from sklearn.compose import ColumnTransformer
-from sklearn.metrics import (classification_report, confusion_matrix,
-                             accuracy_score, roc_auc_score, f1_score,
-                             precision_score, recall_score, roc_curve, auc) 
+from sklearn.utils.class_weight import compute_class_weight
 from keras.models import Sequential
 from keras.layers import Dense, Dropout
 from scikeras.wrappers import KerasClassifier
-from sklearn.utils.class_weight import compute_class_weight
 
 
 # ==================== PAGE SETUP ====================
@@ -35,7 +33,7 @@ st.write(
     "Let's start building! For help and inspiration, head over to [docs.streamlit.io](https://docs.streamlit.io/)."
 )
 
-st.title("Project Stroke Analysis of Smokers")
+st.title("Project Stroke Analysis")
 st.write(
     "This app analyzes risk of stroke based on data from the Framingham Heart Study."
 )
@@ -70,7 +68,22 @@ st.write("HDLC, LDLC, RANDID, TIME, TIMESTRK, TIMEAP, TIMEMI, TIMEMIFC, TIMECHD,
 st.write("The resulting dataset is as follows:")
 st.write(period_1_relev.head())
 
+# Define feature lists
+categorical_features = ['SEX', 'CURSMOKE', 'PREVCHD', 'PREVAP', 'PREVMI', 'PREVSTRK', 'PREVHYP', 'DIABETES', 'BPMEDS', 'DEATH', 'ANGINA', 'HOSPMI', 'MI_FCHD', 'ANYCHD', 'CVD', 'HYPERTEN', 'educ']
+numerical_features = ['AGE', 'SYSBP', 'DIABP', 'CIGPDAY', 'BMI', 'HEARTRTE', 'TOTCHOL']
 
+#===================== ABNORMAL DATA VALUES ================
+st.subheader("Identifying Abnormal Data Values")
+st.write("For the categorical data we wanted to make sure the values were consistent for this we used the simple function value_counts() to identify any abnormalities.")
+
+selected_cat_feature = st.selectbox(
+    "Select a categorical variable to view:",
+    categorical_features
+)
+
+# Display value counts for selected feature
+st.write(f"Value counts for {selected_cat_feature}:")
+st.write(period_1_relev[selected_cat_feature].value_counts())
 # ==================== TRAIN-TEST SPLIT ====================
 
 st.subheader("Train Test Split")
@@ -90,29 +103,22 @@ missing_summary = period_1_relev.isnull().sum()
 st.write(missing_summary[missing_summary > 0])
 st.write("These would have to be imputed however before we could impute, we have to remove outliers as to not skew our imputation.")
 
-categorical_features = ['SEX', 'CURSMOKE', 'PREVCHD', 'PREVAP', 'PREVMI', 'PREVSTRK', 'PREVHYP', 'DIABETES', 'BPMEDS', 'DEATH', 'ANGINA', 'HOSPMI', 'MI_FCHD', 'ANYCHD', 'CVD', 'HYPERTEN', 'educ']
-numerical_features = ['AGE', 'SYSBP', 'DIABP', 'CIGPDAY', 'BMI', 'HEARTRTE', 'TOTCHOL']
-
 
 # ==================== OUTLIER DETECTION AND REMOVAL ====================
 
 st.subheader("Outlier Detection and Removal")
 st.write("We used box plots to identify outliers in the numerical features.")
 
-# Creates dropdown menue
 BoxPlot_Raw = st.selectbox(
     "Select a raw variable to view:",
     numerical_features
-    )
+)
 
-# Creates graph based on the chosen variable
 plt.figure(figsize=(8, 4))
 sns.boxplot(x=period_1_relev[BoxPlot_Raw])
 plt.title(f'Box plot of {BoxPlot_Raw}')
 st.pyplot(plt)
 plt.clf()
-
-
 
 st.write("We tried several methods such as 2*IQR and Z-score but ultimately decided to use biological limits defined by us to cap our data. We used winsorization to impute these values with NaN for now and later re-impute them.")
 
@@ -138,20 +144,20 @@ for col, cap_val in winsorization_caps.items():
 
 st.write("After applying winsorization, here is how our graphs look now:")
 
-# Creates dropdown menue
 BoxPlot_Winzorized = st.selectbox(
     "Select a winzorized variable to view:",
     numerical_features
-    )
+)
 
-# Creates graph based on the chosen variable
 plt.figure(figsize=(8, 4))
 sns.boxplot(x=x_train_processed[BoxPlot_Winzorized])
 plt.title(f'Box plot of {BoxPlot_Winzorized} after Winsorization')
 st.pyplot(plt)
 plt.clf()
 
-st.write("Now that outliers have been handled, we can proceed to impute the missing values.")
+st.write("Now that outliers have been handled, we can proceed to impute the missing values.")
+
+
 # ==================== IMPUTING MISSING VALUES ====================
 
 st.subheader("Imputing Missing Values")
@@ -205,7 +211,32 @@ plt.title('Heatmap of missing values')
 st.pyplot(plt)
 plt.clf()
 
-st.write("No missing values remain thus we could move on to programming the models")
+st.write("No missing values remain we also decided to compare our pre imputation data to our post imputation data and made it interactive so you can choose which variable to view.")
+
+display_variable = st.selectbox(
+    "Select a variable to view",
+    x_test_final.columns
+)
+
+compare_toggled = st.toggle("Toggle Comparison")
+
+
+if compare_toggled:
+    if type(max(display_variable)) == str:
+        int_fig1, ax = plt.subplots()
+        ax.hist(x_train_final[display_variable], color = "red", label = "Clean")
+        ax.hist(x_train[display_variable], alpha = 0.3, color = "blue", label = "Filthy");
+    else:
+        binwidth = (max(display_variable) / 30)
+        int_fig1, ax = plt.subplots()
+        ax.hist(x_train_final[display_variable], color = "red", label = "Clean", bins=range(min(x_train[display_variable]), max(x_train[display_variable]) + binwidth, binwidth))
+        ax.hist(x_train[display_variable], alpha = 0.3, color = "blue", label = "Raw", bins=range(min(x_train[display_variable]), max(x_train[display_variable]) + binwidth, binwidth));
+    
+else:
+    int_fig1, ax = plt.subplots()
+    ax.hist(x_train_final[display_variable], color = "red", label = "Clean",)
+
+st.pyplot(fig=int_fig1)
 
 
 # ==================== SCALING ====================
@@ -213,6 +244,31 @@ st.write("No missing values remain thus we could move on to programming the mode
 scaler = StandardScaler()
 x_train_scaled = scaler.fit_transform(x_train_final)
 x_test_scaled = scaler.transform(x_test_final)
+
+
+# ==================== PREPROCESSING PIPELINE ====================
+
+st.subheader("Preprocessing Pipeline Setup")
+st.write("We set up a preprocessing pipeline to handle both numerical and categorical features appropriately to prevent data leakage when performing K-fold cross-validation and hyperparameter tuning.")
+
+# Numeric preprocessing 
+numeric_pipeline = Pipeline([
+    ("imputer", KNNImputer(n_neighbors=10)),
+    ("scaler", StandardScaler())
+])
+
+# Categorical preprocessing
+categorical_pipeline = Pipeline([
+    ("imputer", SimpleImputer(strategy="most_frequent"))
+])
+
+preprocessor = ColumnTransformer(
+    transformers=[
+        ("num", numeric_pipeline, numerical_features),
+        ("cat", categorical_pipeline, categorical_features)
+    ],
+    remainder="passthrough"
+)
 
 
 # ==================== MODEL 1: INITIAL LOGISTIC REGRESSION ====================
@@ -232,11 +288,13 @@ st.write("Accuracy:", accuracy_score(y_test, y_pred))
 ConfusionMatrixDisplay.from_estimator(model_initial, x_test_scaled, y_test)
 st.pyplot(plt)
 plt.clf()
+
 st.write("The initial model provides a baseline for our analysis. Next, we will explore feature selection techniques to improve model performance.")
 
-# ==================== MODEL 3: RFE FEATURE SELECTION ====================
 
-st.write("Now onto feature selection using Recursive Feature Elimination (RFE).")
+# ==================== MODEL 2: WRAPPER FEATURE SELECTION ====================
+
+st.write("Now onto feature selection using Recursive Feature Elimination (RFE) also known as the Wrapper method.")
 
 estimator = LogisticRegression(class_weight='balanced', max_iter=1000, solver='liblinear')
 n_features_to_select = 20
@@ -247,7 +305,7 @@ selector.fit(x_train_final, y_train)
 featureSupport = pd.DataFrame(data=selector.ranking_, index=list(x_train_processed.columns), columns=['Feature ranking'])
 
 st.subheader("Feature Selection with Wrapper Method (RFE)")
-st.write("We applied Recursive Feature Elimination (RFE) to select the most important features for our model. Here are the top ranked features:")
+st.write("  After applying the wrapper feature selection, here are the top ranked features:")
 
 plt.figure(figsize=(10, 20))
 sns.heatmap(featureSupport.sort_values(ascending=True, by='Feature ranking'), annot=True, cmap='viridis')
@@ -258,7 +316,7 @@ plt.tight_layout()
 st.pyplot(plt)
 plt.clf()
 
-st.write("The RFE process helped us identify the most relevant features, which we can now use to refine our model further.")
+st.write("We decided to try out a model utilizing the wrapper selection.") 
 
 selected_features_rfe = x_train_final.columns[selector.support_]
 X_train_selected_rfe = x_train_final[selected_features_rfe]
@@ -269,8 +327,7 @@ logreg_rfe.fit(X_train_selected_rfe, y_train)
 
 y_pred_rfe = logreg_rfe.predict(X_test_selected_rfe)
 
-st.subheader("Model Results with RFE Selected Features")
-st.write("Here are the results from our Logistic Regression model using features selected by RFE:")
+st.subheader("Model Results with selected features (wrapper)")
 st.text(classification_report(y_test, y_pred_rfe))
 st.write("Accuracy:", accuracy_score(y_test, y_pred_rfe))
 
@@ -279,10 +336,10 @@ plt.title('Confusion Matrix for RFE Selected Features')
 st.pyplot(plt)
 plt.clf()
 
-st.write("Using RFE-selected features, our model maintained strong performance, demonstrating the effectiveness of feature selection in improving model efficiency without sacrificing accuracy.")
+st.write("Using the selected features, our model maintained strong performance, demonstrating the effectiveness of feature selection in improving model efficiency without sacrificing accuracy. However we never actually cross-validated it making it irrelevant later on.")
 
 
-# ==================== MODEL 4: RANDOM FOREST CLASSIFIER ====================
+# ==================== MODEL 3: RANDOM FOREST CLASSIFIER ====================
 
 st.subheader("Random Forest Classifier")
 
@@ -291,7 +348,7 @@ clf.fit(x_train_final, y_train)
 
 prediction = clf.predict(x_test_final)
 
-st.write("Here are the results from our Random Forest Classifier model:")
+
 st.text(classification_report(y_test, prediction))
 
 ConfusionMatrixDisplay.from_predictions(y_true=y_test,
@@ -300,35 +357,13 @@ ConfusionMatrixDisplay.from_predictions(y_true=y_test,
 st.pyplot(plt)
 plt.clf()
 
-st.write("The Random Forest Classifier provided a robust alternative to logistic regression, capturing complex patterns in the data and yielding competitive performance metrics.")
-
-# ==================== PREPROCESSING PIPELINE ====================
-st.subheader (" Preprocessing Pipeline Setup")
-st.write("We set up a preprocessing pipeline to handle both numerical and categorical features appropriately to prevent data leakage when performing K-fold cross-validation" \
-"   and hyperparameter tuning.")
-
-# Numeric preprocessing 
-numeric_pipeline = Pipeline([
-    ("imputer", KNNImputer(n_neighbors=10)),
-    ("scaler", StandardScaler())
-])
-
-# Categorical preprocessing
-categorical_pipeline = Pipeline([
-    ("imputer", SimpleImputer(strategy="most_frequent"))
-])
-preprocessor = ColumnTransformer(
-    transformers=[
-        ("num", numeric_pipeline, numerical_features),
-        ("cat", categorical_pipeline, categorical_features)
-    ],
-    remainder="passthrough"
-)
+st.write("The Random Forest Classifier provided an improved alternative to logistic regression which up to this point also has not been cross-validated however our next model will surprise you.")
 
 
+# ==================== MODEL 4: L1 LOGISTIC REGRESSION WITH CROSS VALIDATION ====================
 
-# ==================== CROSS-VALIDATED FOR L1 LOGISTIC REGRESSION ====================
-st.subheader(" L1 Logistic Regression and Cross Validation") 
+st.subheader("L1 Logistic Regression and Cross Validation")
+st.write("In order to successfully develop a model that is cross-validated  we need to make sure there is no data leakage. For this we developed pipelines that would pre-process the random splits of the cross-validation. Hence we implemented the preprocessing pipeline from earlier.")
 logreg_l1_pipe = Pipeline([
     ("prepocess", preprocessor),
     ("logreg", LogisticRegression(
@@ -339,6 +374,7 @@ logreg_l1_pipe = Pipeline([
         random_state=42
     ))
 ])
+
 scoring_metrics = {
     'accuracy': 'accuracy',
     'precision': 'precision',
@@ -346,6 +382,7 @@ scoring_metrics = {
     'f1': 'f1',
     'roc_auc': 'roc_auc'
 }
+
 cv_value = 5
 cv_results_l1 = cross_validate(
     logreg_l1_pipe,
@@ -354,6 +391,7 @@ cv_results_l1 = cross_validate(
     scoring=scoring_metrics,
     cv=cv_value,
     return_train_score=False)
+
 # Summarize cross-validation results
 results_summary_l1 = {}
 for metric_name in scoring_metrics:
@@ -362,8 +400,8 @@ for metric_name in scoring_metrics:
         'Mean': np.mean(scores_embedded),
         'Standard Deviation': np.std(scores_embedded)
     }
-st.write("Cross-validation results for L1 Logistic Regression:"
-         )
+
+st.write("Cross-validation results for L1 Logistic Regression:")
 results_df_embedded = pd.DataFrame.from_dict(results_summary_l1, orient='index')
 st.write(results_df_embedded)
 
@@ -373,25 +411,18 @@ logreg_l1_pipe.fit(x_train_final, y_train)
 y_pred_l1_test = logreg_l1_pipe.predict(x_test_final)
 y_proba_l1_test = logreg_l1_pipe.predict_proba(x_test_final)[:, 1]
 
-print("\nL1 Logistic Regression – Test set metrics:")
-print(classification_report(y_test, y_pred_l1_test, digits=3))
-print("ROC-AUC:", roc_auc_score(y_test, y_proba_l1_test))
-ConfusionMatrixDisplay.from_predictions(y_test, y_pred_l1_test)
-plt.show()
 st.write("L1 Logistic Regression – Test set metrics:")
 st.text(classification_report(y_test, y_pred_l1_test, digits=3))
 st.write("ROC-AUC:", roc_auc_score(y_test, y_proba_l1_test))
 ConfusionMatrixDisplay.from_predictions(y_test, y_pred_l1_test)
 st.pyplot(plt)
 plt.clf()
-# =================== Hypertuned Random Forest ====================
+
+
+# ==================== MODEL 5: HYPERTUNED RANDOM FOREST ====================
+
 st.subheader("Hypertuned Random Forest Classifier")
-
-st.write("Before Cross-Validating ")
-
-
-
-
+st.write ("For the hyper tuning we had little method and a lot of trial and error eventually we defined them (shown below)")
 best_params = {
     "rf__bootstrap": True,
     "rf__class_weight": "balanced",
@@ -403,8 +434,6 @@ best_params = {
     "rf__n_estimators": 504
 }
 
-# RF pipeline and preprocessor
-
 rf_pipeline = Pipeline([
     ("preprocess", preprocessor),
     ("rf", RandomForestClassifier(
@@ -413,13 +442,12 @@ rf_pipeline = Pipeline([
         random_state=42,
     ))
 ])
+
 best_rf_pipeline = rf_pipeline.set_params(**best_params)
 
-# Reproducible CV
 cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 
-# Same scoring setup you used
-scoring_metrics = {
+scoring_metrics_rf = {
     "accuracy": "accuracy",
     "roc_auc": "roc_auc",
     "f1_class1": make_scorer(f1_score, pos_label=1, average="binary"),
@@ -427,51 +455,46 @@ scoring_metrics = {
     "recall_class1": make_scorer(recall_score, pos_label=1, average="binary", zero_division=0),
 }
 
-print("Running 5-fold CV with fixed best RF parameters...")
-
-cv_results = cross_validate(
+cv_results_rf = cross_validate(
     best_rf_pipeline,
     x_train_final,
     y_train,
-    scoring=scoring_metrics,
+    scoring=scoring_metrics_rf,
     cv=cv,
     return_train_score=False,
     error_score="raise",
 )
 
 # Summarize mean/std
-summary = {}
-for m in scoring_metrics:
-    scores = cv_results[f"test_{m}"]
-    summary[m] = {"Mean": np.mean(scores), "Std": np.std(scores)}
+summary_rf = {}
+for m in scoring_metrics_rf:
+    scores = cv_results_rf[f"test_{m}"]
+    summary_rf[m] = {"Mean": np.mean(scores), "Std": np.std(scores)}
 
-results_df = pd.DataFrame(summary).T
-print("\n=== Fixed Best RF params: 5-fold CV results ===")
-print(results_df)
+results_df_rf = pd.DataFrame(summary_rf).T
 
-print("\nBest params used:")
-for k, v in best_params.items():
-    print(f"  {k}: {v}")
-st.write("Cross-validation results for Hypertuned Random Forest Classifier:"
-         )
-results_df = pd.DataFrame(summary).T
-st.write(results_df)
-st.write("Best params used:")
+st.write("Cross-validation results for Hypertuned Random Forest Classifier:")
+st.write(results_df_rf)
+st.write("Best parameters used:")
 for k, v in best_params.items():
     st.write(f"  {k}: {v}")
-# Fit on full training data 
 
 
-# ---- Params ----
+# ==================== MODEL 6: NEURAL NETWORK CLASSIFIER ====================
+
+st.subheader("Neural Network Classifier with Cross-Validation")
+st.write("This was by far the hardest for us, we kept encountering issues and having to debug or analyze our code often times we also struggled to understand the issues and because of code spaces nature any code after the NN model had to run the NN model first made the process all the more strenuous. AI was very helpful here to debug.")
+
+# Parameters
 EPOCHS = 100
 BATCH_SIZE = 16
 RANDOM_STATE = 42
 
-# ---- Ensure y is 1D ----
+# Ensure y is 1D
 y_train_arr = np.asarray(y_train).ravel()
-y_test_arr   = np.asarray(y_test).ravel()
+y_test_arr = np.asarray(y_test).ravel()
 
-# ---- Calculate class weights ----
+# Calculate class weights
 class_weights_array = compute_class_weight(
     class_weight='balanced',
     classes=np.unique(y_train_arr),
@@ -479,7 +502,7 @@ class_weights_array = compute_class_weight(
 )
 class_weights = {0: class_weights_array[0], 1: class_weights_array[1]}
 
-# ---- Model builder: SciKeras passes meta with feature count ----
+# Model builder
 def create_mlp_model(meta):
     n_features = meta["n_features_in_"]
 
@@ -500,7 +523,7 @@ def create_mlp_model(meta):
     model.compile(loss="binary_crossentropy", optimizer=opt, metrics=["accuracy", tf.keras.metrics.AUC(name="auc")])
     return model
 
-# ---- Pipeline: scaler + NN ----
+# Pipeline
 nn_pipe = Pipeline([
     ("scaler", StandardScaler()),
     ("nn", KerasClassifier(
@@ -508,18 +531,17 @@ nn_pipe = Pipeline([
         epochs=EPOCHS,
         batch_size=BATCH_SIZE,
         verbose=0,
-        class_weight=class_weights # Pass the pre-calculated weights directly
+        class_weight=class_weights
     ))
 ])
 
-# ---- CV ----
-cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
-
+# Cross-validation
+cv_nn = StratifiedKFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
 
 def custom_roc_auc(y_true, y_score):
     return roc_auc_score(y_true, y_score)
 
-scoring_metrics = {
+scoring_metrics_nn = {
     "accuracy": "accuracy",
     "roc_auc": make_scorer(custom_roc_auc),
     "f1_macro": make_scorer(f1_score, average="macro"),
@@ -527,51 +549,37 @@ scoring_metrics = {
     "recall_macro": make_scorer(recall_score, average="macro", zero_division=0),
 }
 
-st.write("Running leakage-free 5-fold CV for MLP pipeline...")
+st.write("Running CV for the neural network (aprox. 6-7 minutes)")
 
-cv_results = cross_validate(
+cv_results_nn = cross_validate(
     nn_pipe,
     x_train_final,
     y_train_arr,
-    scoring=scoring_metrics,
-    cv=cv,
+    scoring=scoring_metrics_nn,
+    cv=cv_nn,
     return_train_score=False,
     error_score="raise",
     n_jobs=1
 )
 
-summary = {}
-for m in scoring_metrics:
-    scores = cv_results[f"test_{m}"]
-    summary[m] = {"Mean": float(np.mean(scores)), "Std": float(np.std(scores))}
+summary_nn = {}
+for m in scoring_metrics_nn:
+    scores = cv_results_nn[f"test_{m}"]
+    summary_nn[m] = {"Mean": float(np.mean(scores)), "Std": float(np.std(scores))}
 
-cv_df = pd.DataFrame(summary).T
-print("\nCV Results (mean ± std):")
-print(cv_df.round(4))
+cv_df = pd.DataFrame(summary_nn).T
 
-print("\nTraining final MLP on full training set...")
-final_nn = nn_pipe  
-final_nn.fit(
-    x_train_final,
-    y_train_arr
-)
-
-# ---- Test once ----
-print("\nEvaluating on test set once...")
-y_test_proba = final_nn.predict_proba(x_test_final)[:, 1]
-y_test_pred  = (y_test_proba >= 0.5).astype(int)
-
-print("\nClassification report:")
-print(classification_report(y_test_arr, y_test_pred, digits=4))
-
-print("Confusion matrix:")
-print(confusion_matrix(y_test_arr, y_test_pred))
-
-print("Test ROC-AUC:", roc_auc_score(y_test_arr, y_test_proba))
-st.subheader("Neural Network Classifier with Cross-Validation")
 st.write("Cross-validation results for Neural Network Classifier:")
-cv_df = pd.DataFrame(summary).T     
 st.write(cv_df.round(4))
+
+# Train final model
+final_nn = nn_pipe  
+final_nn.fit(x_train_final, y_train_arr)
+
+# Test
+y_test_proba = final_nn.predict_proba(x_test_final)[:, 1]
+y_test_pred = (y_test_proba >= 0.5).astype(int)
+
 st.write("\nClassification report:")
 st.text(classification_report(y_test_arr, y_test_pred, digits=4))
 st.write("Test ROC-AUC:", roc_auc_score(y_test_arr, y_test_proba))
@@ -580,15 +588,25 @@ st.pyplot(plt)
 plt.clf()
 
 st.write("The Neural Network Classifier demonstrated weaker performance, yielding worse results than our random forest classifier and logistic regression models. This suggests that for this particular dataset, simpler models may be more effective.")
-st.subheader("Conclusion and evaluation of models")
-st.write("In conclusion, we explored various modeling techniques to predict stroke risk using the Framingham Heart Study dataset. Our initial Logistic Regression model provided a solid baseline, which we improved upon using Recursive Feature Elimination (RFE) for feature selection. The Random Forest Classifier emerged as the best-performing model, effectively capturing complex patterns in the data and yielding strong performance metrics. Conversely, the Neural Network Classifier underperformed compared to simpler models, indicating that more complex architectures do not always guarantee better results. Overall, our analysis highlights the importance of model selection and feature engineering in predictive modeling tasks.")
+
+
+# ==================== CONCLUSION ====================
+
+st.subheader("Conclusion and Evaluation of Models")
+st.write("In conclusion, we explored various modeling techniques to predict stroke risk using the Framingham Heart Study dataset. Our initial Logistic Regression model provided a solid baseline, which we improved upon using Wrapper method (RFE) for feature selection (As we learned to do this in our other course). The Random Forest Classifier turned out to be our strongest model. Conversely the Neural Network Classifier undermined our expectations, showing how complex models do not always guarantee better results. Overall we managed to identify an optimal model and the correct metric for our cause. In this case F1 as it balances precision and recall")
+
 st.write("A summary of the F1-scores for each model is as follows:")
+
 f1_scores = {
     "Initial Logistic Regression": f1_score(y_test, y_pred),
-    "RFE Logistic Regression": f1_score(y_test, y_pred_rfe),
     "Random Forest Classifier": f1_score(y_test, prediction),
     "Neural Network Classifier": f1_score(y_test_arr, y_test_pred)
 }
+
 f1_df = pd.DataFrame.from_dict(f1_scores, orient='index', columns=['F1 Score'])
 st.write(f1_df)
+
 st.write("The Random Forest Classifier achieved the highest F1-score, indicating its superior ability to balance precision and recall in predicting stroke risk within this dataset.")
+
+st.subheader("AI usage")
+st.write("Throughout the development of this project AI was used for mainly debugging, correcting errors and complex parts of NNs and Cross-validation. In the exploratory part we mainly used it to correct the code for Winsorization the rest was either extracted from workbooks in our other courses. Another way which AI was used is in the resolving of transitioning from Colab to Streamlit, here AI helped us install and clean our libraries and code (removing doubles and splitting into sections). Lastly AI did not generate the text or explanations in this APP and did not do any of the critical thinking such as evaluating what data to use or which metric to determine the best model, it was also not implemented in directing the direction of this project")
