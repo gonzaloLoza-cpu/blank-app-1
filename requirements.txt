@@ -1,1 +1,10 @@
 streamlit
+matplotlib
+seaborn
+scikit-learn
+pandas
+numpy
+plotly
+tensorflow>=2.0.0
+keras>=2.3.0
+scikeras
