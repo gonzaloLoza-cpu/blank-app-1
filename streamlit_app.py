@@ -49,7 +49,6 @@ st.write("We had 3 Periods worth of data due to overlap and bias when using all 
 st.markdown("""
 - Most active participants; 4,434 entries
 - Highest incidence of stroke; 5.5%
-- Least releavant missing data; only 4 relevant features with missing values
 """)
 
 period_1 = dataset.groupby('PERIOD').get_group(1)
@@ -598,10 +597,13 @@ st.write("In conclusion, we explored various modeling techniques to predict stro
 st.write("A summary of the F1-scores for each model is as follows:")
 
 f1_scores = {
-    "Initial Logistic Regression": f1_score(y_test, y_pred),
-    "Random Forest Classifier": f1_score(y_test, prediction),
-    "Neural Network Classifier": f1_score(y_test_arr, y_test_pred)
-}
+    "Initial Logistic Regression": 0.63,
+    "Random Forest Classifier": 0.76,
+    "Neural Network Classifier": 0.6667,
+    "L1 Logistic Regression with CV": 0.5874,
+    "Hypertuned Random Forest Classifier with CV": 0.7914,
+    "Neural Network Classifier with CV": 0.8491
+    }
 
 f1_df = pd.DataFrame.from_dict(f1_scores, orient='index', columns=['F1 Score'])
 st.write(f1_df)
