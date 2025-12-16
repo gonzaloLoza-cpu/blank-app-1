@@ -35,7 +35,7 @@ st.write(
 
 st.title("Project Stroke Analysis")
 st.write(
-    "This app analyzes risk of stroke based on data from the Framingham Heart Study."
+    "This app analyzes risk of stroke based on data from the Framingham Heart Study, to answer the question: 'Can we predict the risk of stroke in patients based on their health data?'"
 )
 
 
@@ -609,6 +609,7 @@ f1_df = pd.DataFrame.from_dict(f1_scores, orient='index', columns=['F1 Score'])
 st.write(f1_df)
 
 st.write("The Random Forest Classifier achieved the highest F1-score, indicating its superior ability to balance precision and recall in predicting stroke risk within this dataset.")
-
+st.write("Leading to the answer of our question: 'Can we predict the risk of stroke in patients based on their health data?', Yes we can with some fine tuning create a model that could accurately and precisely predict stroke risk (in a 6 year window) based on simple health data ")
+st.write("For the future this project could explore the more sophisticated models of NNs like the one we used as it had a surprisingly high CV F1 score, also more hyper tuning could be done on the RF model to see if it could be improved further. Another aspect that could be explored is gathering more data or using data augmentation techniques to increase the dataset size and evening it out more as currently with 5.5% quite imbalanced.") 
 st.subheader("AI usage")
 st.write("Throughout the development of this project AI was used for mainly debugging, correcting errors and complex parts of NNs and Cross-validation. In the exploratory part we mainly used it to correct the code for Winsorization the rest was either extracted from workbooks in our other courses. Another way which AI was used is in the resolving of transitioning from Colab to Streamlit, here AI helped us install and clean our libraries and code (removing doubles and splitting into sections). Lastly AI did not generate the text or explanations in this APP and did not do any of the critical thinking such as evaluating what data to use or which metric to determine the best model, it was also not implemented in directing the direction of this project")
