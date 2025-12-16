@@ -120,6 +120,24 @@ st.pyplot(plt)
 plt.clf()
 
 st.write("We tried several methods such as 2*IQR and Z-score but ultimately decided to use biological limits defined by us to cap our data. We used winsorization to impute these values with NaN for now and later re-impute them.")
+st.write("The following caps were applied:")
+st.markdown("""
+- TOTCHOL: 500
+- DIABP: 125
+- SYSBP: 220
+- BMI: 50
+- HEARTRTE: 200
+""")
+st.write("These are the sources for our values:")
+st.markdown("""
+	- https://www.nature.com/articles/s41371-021-00598-1
+	- https://nutritionfacts.org/blog/whats-the-optimal-cholesterol-level/
+	- https://pmc.ncbi.nlm.nih.gov/articles/PMC2838679/
+	- https://www.nhlbi.nih.gov/health/high-blood-pressure
+	- https://www.gsdinternational.com/news/optimal-cholesterol-levels
+	- https://www.ahajournals.org/doi/10.1161/circulationaha.106.171016
+	- https://www.cdc.gov/high-blood-pressure/about/index.html
+	- https://www.healthline.com/health/high-cholesterol/levels-by-age """)
 
 x_train_processed = x_train.copy(deep=True)
 x_test_processed = x_test.copy(deep=True)
@@ -335,7 +353,7 @@ plt.title('Confusion Matrix for RFE Selected Features')
 st.pyplot(plt)
 plt.clf()
 
-st.write("Using the selected features, our model maintained strong performance, demonstrating the effectiveness of feature selection in improving model efficiency without sacrificing accuracy. However we never actually cross-validated it making it irrelevant later on.")
+st.write("Using the selected features, our model had a weaker performance, this is likely because we used the top 10 when there were more features ranked as top 1 importance.")
 
 
 # ==================== MODEL 3: RANDOM FOREST CLASSIFIER ====================
